@@ -79,6 +79,27 @@
 		return $str;
 	}
 
+	function array_iconv($data, $input = 'gbk', $output = 'utf-8')  //对数组和字符串进行编码转换
+	{
+		if(!is_array($data))
+		{
+			return iconv($input, $output, $data);
+		}else
+		{
+			foreach ($data as $key=>$val)
+			{
+				if(is_array($val))
+				{
+					$data[$key] = array_iconv($val, $input, $output);
+				}else
+				{
+					$data[$key] = iconv($input, $output, $val);
+				}
+			}
+			return $data;
+		}
+	}
+
 
 	function auto_addslashes(&$array)  //转义
 	{
@@ -217,6 +238,78 @@
 		return $strcut.$dot;
 	}
 
+	function cgmdate( $timestamp = "", $format = "n-d H:i", $convert = 1 )  //格式化时间 来自：手游江湖 如：3小时前
+	{
+		global $timeoffset;
+		$todaytime = strtotime( "today" );
+		$timeoffset = $timeoffset ? $timeoffset : 8;
+		$timeformat = 'H:i';
+		$s = gmdate( $format, $timestamp + $timeoffset * 3600);
+		if ( !$convert )
+		{
+			return $s;
+		}
+		$lang = array
+			(
+				0 => '前',
+				1 => '天',
+				2 => '前天',
+				3 => '昨天',
+				4 => '今天',
+				5 => '小时',
+				6 => '半',
+				7 => '分',
+				8 => '秒',
+				9 => '刚才'
+			);
+		$timenow = time();
+		$time = $timenow - $timestamp;
+		if ( $todaytime <= $timestamp )
+		{
+			if ( 10800 < $time )
+			{		
+				$d = date('n-d H:i',$timestamp);
+				return $lang[4]."&nbsp;".gmdate( $timeformat, $timestamp + $timeoffset * 3600);
+			}
+			if ( 3600 < $time )
+			{
+				return intval( $time / 3600 )."&nbsp;".$lang[5].$lang[0];
+			}
+			if ( 1800 < $time )
+			{
+				return $lang[6].$lang[5].$lang[0];
+			}
+			if ( 60 < $time )
+			{
+				return intval( $time / 60 )."&nbsp;".$lang[7].$lang[0];
+			}
+			if ( 0 < $time )
+			{
+				return $time."&nbsp;".$lang[8].$lang[0];
+			}
+			if ( $time == 0 )
+			{
+				return $lang[9];
+			}
+			return $s;
+		}
+		if ( 0 <= ( $days = intval( ( $todaytime - $timestamp ) / 86400 ) ) && $days < 2 )
+		{
+			if ( $days == 0 )
+			{
+				return $lang[3]."&nbsp;".gmdate( $timeformat, $timestamp + $timeoffset * 3600);
+			}
+			if ( $days == 1 )
+			{
+				return $lang[2]."&nbsp;".gmdate( $timeformat, $timestamp + $timeoffset * 3600);
+			}
+		}
+		else
+		{
+			return $s;
+		}
+	}
+
 	function dirsize($dir)  //计算目录大小
 	{
 		$dh = opendir($dir);
@@ -258,9 +351,102 @@
 		exit();
 	}
 
-	function fileext($filename)  //获取扩展名
+	function dfopen($url, $limit = 0, $post = '', $cookie = '', $bysocket = FALSE, $ip = '', $timeout = 15, $block = TRUE)   //远程打开一个文件  来自：Discuz 7
 	{
-		return trim(substr(strrchr($filename, '.'), 1, 10));
+		$return = '';
+		$matches = parse_url($url);
+		$host = $matches['host'];
+		$path = $matches['path'] ? $matches['path'].($matches['query'] ? '?'.$matches['query'] : '') : '/';
+		$port = !empty($matches['port']) ? $matches['port'] : 80;
+
+		if($post)
+		{
+			$out = "POST $path HTTP/1.0\r\n";
+			$out .= "Accept: */*\r\n";
+			$out .= "Accept-Language: zh-cn\r\n";
+			$out .= "Content-Type: application/x-www-form-urlencoded\r\n";
+			$out .= "User-Agent: $_SERVER[HTTP_USER_AGENT]\r\n";
+			$out .= "Host: $host\r\n";
+			$out .= 'Content-Length: '.strlen($post)."\r\n";
+			$out .= "Connection: Close\r\n";
+			$out .= "Cache-Control: no-cache\r\n";
+			$out .= "Cookie: $cookie\r\n\r\n";
+			$out .= $post;
+		}
+		else
+		{
+			$out = "GET $path HTTP/1.0\r\n";
+			$out .= "Accept: */*\r\n";
+			$out .= "Accept-Language: zh-cn\r\n";
+			$out .= "User-Agent: $_SERVER[HTTP_USER_AGENT]\r\n";
+			$out .= "Host: $host\r\n";
+			$out .= "Connection: Close\r\n";
+			$out .= "Cookie: $cookie\r\n\r\n";
+		}
+		$fp = @fsockopen(($ip ? $ip : $host), $port, $errno, $errstr, $timeout);
+		if(!$fp)
+		{
+			return '';
+		}else
+		{
+			stream_set_blocking($fp, $block);
+			stream_set_timeout($fp, $timeout);
+			@fwrite($fp, $out);
+			$status = stream_get_meta_data($fp);
+			if(!$status['timed_out'])
+			{
+				while(!feof($fp))
+				{
+					if(($header = @fgets($fp)) && ($header == "\r\n" ||  $header == "\n"))
+					{
+						break;
+					}
+				}
+
+				$stop = false;
+				while(!feof($fp) && !$stop)
+				{
+					$data = fread($fp, ($limit == 0 || $limit > 8192 ? 8192 : $limit));
+					$return .= $data;
+					if($limit)
+					{
+						$limit -= strlen($data);
+						$stop = $limit <= 0;
+					}
+				}
+			}
+			@fclose($fp);
+			return $return;
+		}
+	}
+
+	function dheader($string, $replace = true, $http_response_code = 0)  //重写header，来自Discuz
+	{
+		$string = str_replace(array("\r", "\n"), array('', ''), $string);
+		if(empty($http_response_code) || PHP_VERSION < '4.3' )
+		{
+			@header($string, $replace);
+		}else
+		{
+			@header($string, $replace, $http_response_code);
+		}
+		if(preg_match('/^\s*location:/is', $string))
+		{
+			exit();
+		}
+	}
+
+	function fileext($filename) //获取扩展名 来自：AKCMS
+	{
+		$ext = strtolower(trim(substr(strrchr($filename, '.'), 1)));
+		$offset = strpos($ext, '?');
+		if($offset !== false)
+		{
+			return substr($ext, 0, $offset);
+		}else
+		{
+			return $ext;
+		}
 	}
 
 	function ffile_get_contents($url) //重写file_get_contents 增加超时时间
@@ -275,6 +461,35 @@
 		$r = file_get_contents($url, 0, $ctx);
 		unset($ctx);
 		return $r;
+	}
+
+	function recursive_mkdir($dirname)  //  循环创建目录  来自AKCMS
+	{
+		$dirname = str_replace('\\', '/', $dirname);
+		$a_path = explode('/', $dirname);
+		if(count($a_path) == 0)
+		{
+			mkdir($dirname);
+		}else
+		{
+			array_pop($a_path);
+			$path = @implode('/', $a_path);
+			if(is_dir($path . '/'))
+			{
+				@mkdir($dirname);
+			}else
+			{
+				ak_mkdir($path);
+				@mkdir($dirname);
+			}
+		}
+	}
+
+	function fl_touch($file)  //创建一个空白文件
+	{
+		$dir = dirname($file);
+		recursive_mkdir($dir);
+		@touch($file);
 	}
 
 	function get_pwd_salt() //获得密码加密使用的salt
@@ -365,9 +580,86 @@
 		return $realip;
 	}
 
+	function gbk_addslashes($text)  //gbk字符串 转义
+	{
+		if(!function_exists('mb_strpos')) return addslashes($text);
+		if(strpos($text, '\\') === false) return addslashes($text);
+		$ok = '';
+		while(1)
+		{
+			$i = mb_strpos($text, chr(92), 0, 'GBK');
+			if($i === false) break;
+			$t = mb_substr($text, 0, $i, 'GBK').chr(92).chr(92);
+			$text = substr($text, strlen($t) - 1);
+			$ok .= $t;
+		}
+		$text = $ok.$text;
+		$text = str_replace(chr(39), chr(92).chr(39), $text);
+		$text = str_replace(chr(34), chr(92).chr(34), $text);
+		return $text;
+	}
+
+	function gbk_stripslashes($text)  //gbk字符串 反转义
+	{
+		$text = str_replace(chr(92).chr(34), chr(34), $text);
+		$text = str_replace(chr(92).chr(39), chr(39), $text);
+		$ok = '';
+		while(1)
+		{
+			$i = mb_strpos($text, chr(92).chr(92), 0, 'GBK');
+			if($i === false) break;
+			$t = mb_substr($text, 0, $i, 'GBK').chr(92);
+			$text = substr($text, strlen($t) + 1);
+			$ok .= $t;
+		}
+		$text = $ok.$text;
+		return $text;
+	}
+
 	function isemail($email) //检测是否为电子邮件地址
 	{
 		return strlen($email) > 6 && preg_match("/^[\w\-\.]+@[\w\-\.]+(\.\w+)+$/", $email);
+	}
+
+	function is_utf8($string)  //检测是否为UTF-8字符串 来自：PHPCMS
+	{
+		return preg_match('%^(?:
+					[\x09\x0A\x0D\x20-\x7E] # ASCII
+					| [\xC2-\xDF][\x80-\xBF] # non-overlong 2-byte
+					| \xE0[\xA0-\xBF][\x80-\xBF] # excluding overlongs
+					| [\xE1-\xEC\xEE\xEF][\x80-\xBF]{2} # straight 3-byte
+					| \xED[\x80-\x9F][\x80-\xBF] # excluding surrogates
+					| \xF0[\x90-\xBF][\x80-\xBF]{2} # planes 1-3
+					| [\xF1-\xF3][\x80-\xBF]{3} # planes 4-15
+					| \xF4[\x80-\x8F][\x80-\xBF]{2} # plane 16
+					)*$%xs', $string);
+	}
+
+	function mysql_addslashes($value, $charset = 'utf-8')  //转义SQL语句的中的value
+	{
+		if(is_array($value))
+		{
+			foreach($value as $k => $v)
+			{
+				$value[$k] = mysql_addslashes($v);
+			}
+		}else
+		{
+			if($charset == 'gbk')
+			{
+				$value = gbk_addslashes($value);
+			}else
+			{
+				if(function_exists('mysql_real_escape_string'))
+				{
+					$value = mysql_real_escape_string($value);
+				}else
+				{
+					$value = addslashes($value);
+				}
+			}
+		}
+		return $value;
 	}
 
 	function monthsunixtime($mon = false) //得到一个月的时间戳返回
@@ -410,15 +702,70 @@
 		passthru($cmd);
 	}
 
-	function stric($k,$char ='UTF-8')  //转码
+	function stric($k,$charset ='UTF-8')  //转码
 	{
-		$nk = ($contentscharset = mb_detect_encoding($k, "ASCII, UTF-8, GB2312, GBK")) == "$char" ? $k : iconv($contentscharset, "$char", $k);
+		$nk = ($contentscharset = mb_detect_encoding($k, "ASCII, UTF-8, GB2312, GBK")) == "$charset" ? $k : iconv($contentscharset, "$charset", $k);
 		return $nk;
 	}
+
+	function str_exists($string, $find)  //查询字符是否存在于某字符串  来自：PHPCMS
+	{
+		return !(strpos($string, $find) === FALSE);
+	}
+
+	function ssetcookie($var, $value = '', $life = 0, $prefix = 1, $httponly = false)  //重写setcookie
+	{
+		global $cookiepre, $cookiedomain, $cookiepath, $timestamp, $_SERVER;
+		$var = ($prefix ? $cookiepre : '').$var;
+		if($value == '' || $life < 0)
+		{
+			$value = '';
+			$life = -1;
+		}
+		$life = $life > 0 ? $timestamp + $life : ($life < 0 ? $timestamp - 31536000 : 0);
+		$path = $httponly && PHP_VERSION < '5.2.0' ? "$cookiepath; HttpOnly" : $cookiepath;
+		$secure = $_SERVER['SERVER_PORT'] == 443 ? 1 : 0;
+		if(PHP_VERSION < '5.2.0')
+		{
+			setcookie($var, $value, $life, $path, $cookiedomain, $secure);
+		}else
+		{
+			setcookie($var, $value, $life, $path, $cookiedomain, $secure, $httponly);
+		}
+	}
+
 
 	function timediff($start,$end)  //计算时差  时间戳
 	{
 		return ceil(($end - $start) / 86400);
+	}
+
+	function utf8_trim($str) //UTF8字符串整齐化
+	{
+		$hex = '';
+		$len = strlen($str) - 1;
+		for($i = $len; $i >= 0; $i -= 1)
+		{
+			$ch = ord($str[$i]);
+			$hex .= " $ch";
+			if(($ch & 128) == 0 || ($ch & 192) == 192)
+			{
+				return substr($str, 0, $i);
+			}
+		}
+		return $str . $hex;
+	}
+
+	function writeover($fileName, $data, $method = 'rb+', $ifLock = true, $ifChmod = true) //追加写入文件 来自：PHPWIND
+	{
+		@fl_touch($fileName);
+		$handle = fopen($fileName, $method);
+		$ifLock && flock($handle, LOCK_EX);
+		$writeCheck = fwrite($handle, $data);
+		$method == 'rb+' && ftruncate($handle, strlen($data));
+		fclose($handle);
+		$ifChmod && @chmod($fileName, 0777);
+		return $writeCheck;
 	}
 
 	function xml2array($url, $get_attributes = 1, $priority = 'tag') //解析XML
